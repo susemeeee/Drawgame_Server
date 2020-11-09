@@ -1,18 +1,22 @@
-/*
- * ServerFrame.java
+package UI;/*
+ * UI.ServerFrame.java
  * Author : 박찬형
  * Created Date : 2020-11-09
  */
 
+
+
 import javax.swing.*;
 import java.awt.*;
+
 
 public class ServerFrame {
     private JFrame frame;
     private JTextArea logArea;
     private JButton startButton;
 
-    public ServerFrame(){
+
+    private ServerFrame(){
         frame = new JFrame();
         initFrame();
     }
@@ -39,5 +43,13 @@ public class ServerFrame {
         frame.add(startButton);
 
         frame.repaint();
+    }
+
+    public static ServerFrame getInstance(){
+        return LazyHolder.INSTANCE;
+    }
+
+    private static class LazyHolder{
+        private static final ServerFrame INSTANCE = new ServerFrame();
     }
 }
