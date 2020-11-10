@@ -1,24 +1,36 @@
-package UI;/*
+/*
  * UI.ServerFrame.java
  * Author : 박찬형
  * Created Date : 2020-11-09
  */
+package UI;
 
-
+import datatype.User;
+import net.Connection;
 
 import javax.swing.*;
 import java.awt.*;
-
+import java.util.List;
 
 public class ServerFrame {
+    private Connection connection;
+    private List<User> users;
+    private boolean isStarted;
+
     private JFrame frame;
+    private GridBagLayout layout;
+    private GridBagConstraints constraints;
     private JTextArea logArea;
+    private JPanel logPanel;
     private JButton startButton;
 
 
     private ServerFrame(){
         frame = new JFrame();
+        isStarted = false;
+        connection = new Connection();
         initFrame();
+        setView();
     }
 
     private void initFrame(){
@@ -27,21 +39,47 @@ public class ServerFrame {
         frame.setLayout(null);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setVisible(true);
-        setView();
     }
 
     private void setView(){
-        logArea = new JTextArea();
-        logArea.setBounds(25, 25, 350, 375);
-        logArea.setEditable(false);
-        logArea.setVisible(true);
-        frame.add(logArea);
+        logPanel = new JPanel();
+        logPanel.setLocation(new Point(25, 25));
+        logPanel.setSize(new Dimension(350, 375));
+        logPanel.setLayout(new GridLayout());
+        logPanel.setVisible(true);
 
-        startButton = new JButton("Start");
+        logArea = new JTextArea();
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        scrollPane.setVisible(true);
+        logArea.setVisible(true);
+        logPanel.add(scrollPane);
+        frame.add(logPanel);
+
+        frame.repaint();
+        frame.revalidate();
+
+        startButton = new JButton("START");
         startButton.setBounds(25, 425, 350, 50);
+        startButton.setBackground(Color.GREEN);
+        startButton.addActionListener(e -> {
+            if(!isStarted){
+                connection.startServer("localhost", 9002);
+                startButton.setText("STOP");
+                startButton.setBackground(Color.RED);
+                frame.repaint();
+
+                isStarted = true;
+            }
+        });
         startButton.setVisible(true);
         frame.add(startButton);
 
+        frame.repaint();
+    }
+
+    public void appendLogLine(String msg){
+        logArea.append(msg + "\n");
         frame.repaint();
     }
 
