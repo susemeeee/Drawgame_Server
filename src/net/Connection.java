@@ -90,14 +90,15 @@ public class Connection{
         try {
             buffer.clear();
             ((SocketChannel)key.channel()).read(buffer);
-            byte[] bytes = new byte[buffer.position()];
-            buffer.flip();
-            buffer.get(bytes);
-            String data = new String(bytes);
-            ServerFrame.getInstance().appendLogLine(data); // test
+
+            ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(buffer.array());
+            ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream);
+            String data = (String)objectInputStream.readObject();
+            ServerFrame.getInstance().appendLogLine(data);
+
             sendOne(data, (SocketChannel)key.channel()); //test
             //TODO 데이터 바인딩
-        } catch (IOException e) {
+        } catch (IOException | ClassNotFoundException e) {
             //TODO 연결 끊어짐
             e.printStackTrace();
         }
@@ -105,11 +106,11 @@ public class Connection{
 
     private void sendOne(String data, SocketChannel client){
         try {
-            ByteBuffer buffer = ByteBuffer.allocateDirect(1024);
-            buffer.clear();
-            buffer.put(data.getBytes());
-            buffer.flip();
-            client.write(buffer);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
+            objectOutputStream.writeObject(data);
+            objectOutputStream.flush();
+            client.write(ByteBuffer.wrap(byteArrayOutputStream.toByteArray()));
         } catch (IOException e) {
             e.printStackTrace();
         }
