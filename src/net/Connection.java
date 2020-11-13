@@ -6,6 +6,13 @@
 package net;
 
 import UI.ServerFrame;
+import datatype.Target;
+import datatype.User;
+import datatype.packet.Packet;
+import datatype.packet.PacketType;
+import util.DataMaker;
+import util.LoginPacketParser;
+import util.Parser;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -14,12 +21,38 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.Iterator;
+import java.util.*;
 
 public class Connection{
     private ServerSocketChannel server;
     private Selector selector;
     private Thread serverThread;
+    private List<User> users;
+    private EnumMap<PacketType, Parser> parserMap;
+    private ByteBuffer buffer;
+
+    private ByteArrayInputStream byteArrayInputStream;
+    private ObjectInputStream objectInputStream;
+    private ByteArrayOutputStream byteArrayOutputStream;
+    private ObjectOutputStream objectOutputStream;
+
+    public Connection(){
+        users = Collections.synchronizedList(new ArrayList<>());
+
+        buffer = ByteBuffer.allocate(1048576);
+        try {
+            byteArrayOutputStream = new ByteArrayOutputStream();
+            objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
+            byteArrayInputStream = null;
+            objectInputStream = null;
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        parserMap = new EnumMap(PacketType.class);
+        parserMap.put(PacketType.LOGIN, new LoginPacketParser());
+    }
 
     public void startServer(String address, int port){
         try {
@@ -77,37 +110,51 @@ public class Connection{
             client.configureBlocking(false);
             client.register(selector, SelectionKey.OP_READ);
 
-            //TODO 접속자 추가 동작
             ServerFrame.getInstance().appendLogLine("client connect.");
+            users.add(new User(client));
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     private void read(SelectionKey key){
-        ByteBuffer buffer = ByteBuffer.allocate(1024);
-
+        ByteBuffer data = ByteBuffer.allocate(1048576);
+        buffer = ByteBuffer.allocate(1048576);
         try {
             buffer.clear();
-            ((SocketChannel)key.channel()).read(buffer);
+            data.clear();
+            SocketChannel client = (SocketChannel)key.channel();
+            while(client.read(data) > 0){
+                data.flip();
+                buffer.put(data);
+                data = ByteBuffer.allocate(1048576);
+            }
+            buffer.flip();
+            byte[] array = new byte[buffer.limit()];
+            buffer.get(array, 0, buffer.limit());
+            Map<String, String> receivedPacket = DataMaker.make(new String(array));
 
-            ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(buffer.array());
-            ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream);
-            String data = (String)objectInputStream.readObject();
-            ServerFrame.getInstance().appendLogLine(data);
+            int userIndex = findUser(client);
+            Target target = Target.NONE;
+            if(userIndex != -1){
+                target = parserMap.get(PacketType.valueOf(receivedPacket.get("type")))
+                        .parse(users.get(userIndex), receivedPacket);
+            }
 
-            sendOne(data, (SocketChannel)key.channel()); //test
-            //TODO 데이터 바인딩
-        } catch (IOException | ClassNotFoundException e) {
+            ServerFrame.getInstance().appendImage(users.get(userIndex).getCharacterIcon());
+
+//            if(target == Target.BROADCAST){
+//                //TODO 브로드캐스트
+//            }
+        } catch (IOException e) {
             //TODO 연결 끊어짐
             e.printStackTrace();
+            System.exit(1); //temp
         }
     }
 
-    private void sendOne(String data, SocketChannel client){
+    private void sendOne(Packet data, SocketChannel client){
         try {
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
             objectOutputStream.writeObject(data);
             objectOutputStream.flush();
             client.write(ByteBuffer.wrap(byteArrayOutputStream.toByteArray()));
@@ -118,5 +165,14 @@ public class Connection{
 
     public void stopServer(){
         //TODO stop버튼 누를 시 서버 중지`
+    }
+
+    private int findUser(SocketChannel socketChannel){
+        for(User user : users){
+            if(user.getSocketChannel().equals(socketChannel)){
+                return users.indexOf(user);
+            }
+        }
+        return -1;
     }
 }

@@ -83,6 +83,11 @@ public class ServerFrame {
         frame.repaint();
     }
 
+    public void appendImage(ImageIcon icon){ //test
+        startButton.setIcon(icon);
+        frame.repaint();
+    }
+
     public static ServerFrame getInstance(){
         return LazyHolder.INSTANCE;
     }
