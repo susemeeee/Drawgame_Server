@@ -141,8 +141,6 @@ public class Connection{
                         .parse(users.get(userIndex), receivedPacket);
             }
 
-            ServerFrame.getInstance().appendImage(users.get(userIndex).getCharacterIcon());
-
 //            if(target == Target.BROADCAST){
 //                //TODO 브로드캐스트
 //            }

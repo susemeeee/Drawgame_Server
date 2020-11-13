@@ -5,6 +5,7 @@
  */
 package util;
 
+import UI.ServerFrame;
 import datatype.Target;
 import datatype.User;
 
@@ -18,6 +19,14 @@ public class LoginPacketParser extends Parser{
         user.setName(data.get("name"));
         byte[] imageBytes = Base64.getDecoder().decode(data.get("characterIcon"));
         user.setCharacterIcon(new ImageIcon(imageBytes));
+        log(data);
         return Target.NONE;
+    }
+
+    @Override
+    public void log(Map<String, String> data) {
+        ServerFrame.getInstance().appendLogLine("Received type: " + data.get("type"));
+        ServerFrame.getInstance().appendLogLine("Name : " + data.get("name"));
+        ServerFrame.getInstance().appendLogLine("CharacterIcon: IMAGE");
     }
 }

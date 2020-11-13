@@ -12,4 +12,5 @@ import java.util.Map;
 
 public abstract class Parser {
     public abstract Target parse(User user, Map<String, String> data);
+    public abstract void log(Map<String, String> data);
 }
