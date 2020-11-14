@@ -7,19 +7,23 @@ package datatype;
 
 
 import javax.swing.*;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
 public class User {
     private SocketChannel socketChannel;
     private String name;
     private ImageIcon characterIcon;
+    private int pageNumber;
+    private boolean isRequestedRoomData;
 
     public User(SocketChannel socketChannel){
         this.socketChannel = socketChannel;
+        pageNumber = -1;
+        isRequestedRoomData = false;
+    }
+
+    public void login(){
+        pageNumber = 1;
     }
 
     public SocketChannel getSocketChannel() {
@@ -44,5 +48,21 @@ public class User {
 
     public void setCharacterIcon(ImageIcon characterIcon) {
         this.characterIcon = characterIcon;
+    }
+
+    public int getPageNumber() {
+        return pageNumber;
+    }
+
+    public void setPageNumber(int pageNumber) {
+        this.pageNumber = pageNumber;
+    }
+
+    public boolean isRequestedRoomData() {
+        return isRequestedRoomData;
+    }
+
+    public void setRequestedRoomData(boolean requestedRoomData) {
+        isRequestedRoomData = requestedRoomData;
     }
 }

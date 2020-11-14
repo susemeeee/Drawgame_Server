@@ -6,6 +6,5 @@
 package datatype;
 
 public enum Target {
-    NONE,
-    BROADCAST
+    NONE, BROADCAST, SEND_TO_SENDER
 }

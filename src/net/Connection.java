@@ -6,6 +6,7 @@
 package net;
 
 import UI.ServerFrame;
+import datatype.Room;
 import datatype.Target;
 import datatype.User;
 import datatype.packet.Packet;
@@ -13,6 +14,7 @@ import datatype.packet.PacketType;
 import util.DataMaker;
 import util.LoginPacketParser;
 import util.Parser;
+import util.RequestRoomPacketParser;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -21,6 +23,8 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class Connection{
@@ -30,28 +34,15 @@ public class Connection{
     private List<User> users;
     private EnumMap<PacketType, Parser> parserMap;
     private ByteBuffer buffer;
-
-    private ByteArrayInputStream byteArrayInputStream;
-    private ObjectInputStream objectInputStream;
-    private ByteArrayOutputStream byteArrayOutputStream;
-    private ObjectOutputStream objectOutputStream;
+    private List<Room> rooms;
 
     public Connection(){
         users = Collections.synchronizedList(new ArrayList<>());
-
-        buffer = ByteBuffer.allocate(1048576);
-        try {
-            byteArrayOutputStream = new ByteArrayOutputStream();
-            objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
-            byteArrayInputStream = null;
-            objectInputStream = null;
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        rooms = Collections.synchronizedList(new ArrayList<>());
 
         parserMap = new EnumMap(PacketType.class);
         parserMap.put(PacketType.LOGIN, new LoginPacketParser());
+        parserMap.put(PacketType.REQUEST_ROOM, new RequestRoomPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -139,7 +130,20 @@ public class Connection{
             if(userIndex != -1){
                 target = parserMap.get(PacketType.valueOf(receivedPacket.get("type")))
                         .parse(users.get(userIndex), receivedPacket);
+
+                if(target == Target.SEND_TO_SENDER){
+                    if(users.get(userIndex).isRequestedRoomData()){
+                        Packet response = responseRoomData(Integer.parseInt(receivedPacket.get("page")));
+                        users.get(userIndex).setRequestedRoomData(false);
+                        sendOne(response, client);
+
+                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
+                        ServerFrame.getInstance().appendLogLine("Room count: " + response.getData("totalroom"));
+                    }
+                }
             }
+
+
 
 //            if(target == Target.BROADCAST){
 //                //TODO 브로드캐스트
@@ -153,9 +157,9 @@ public class Connection{
 
     private void sendOne(Packet data, SocketChannel client){
         try {
-            objectOutputStream.writeObject(data);
-            objectOutputStream.flush();
-            client.write(ByteBuffer.wrap(byteArrayOutputStream.toByteArray()));
+            Charset charset = StandardCharsets.UTF_8;
+            buffer = charset.encode(data.toString());
+            client.write(buffer);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -172,5 +176,35 @@ public class Connection{
             }
         }
         return -1;
+    }
+
+    private Packet responseRoomData(int page){
+        Packet packet = new Packet(PacketType.RESPONSE_ROOM);
+        List<Room> result = new ArrayList<>();
+        int count = 0;
+        for(int i = 0; i < rooms.size(); i++){
+            if((count >= page * 10 - 10) && (count < page * 10) && (!rooms.get(count).isGameStarted())){
+                result.add(rooms.get(i));
+                count++;
+            }
+            else if(!rooms.get(count).isGameStarted()){
+                count++;
+            }
+            if(count >= page * 10){
+                break;
+            }
+        }
+
+        int roomIndex = 1;
+        int roomCount = 0;
+        for(Room r : rooms){
+            packet.addData("room" + roomIndex + "_name", r.getName());
+            packet.addData("room" + roomIndex + "_maxuser", Integer.toString(r.getMaxUser()));
+            packet.addData("room" + roomIndex + "_currentuser", Integer.toString(r.getCurrentUser()));
+            roomCount++;
+        }
+        packet.addData("totalroom", Integer.toString(roomCount));
+
+        return packet;
     }
 }
