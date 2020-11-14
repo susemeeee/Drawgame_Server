@@ -8,5 +8,5 @@ package datatype.packet;
 import java.io.Serializable;
 
 public enum PacketType implements Serializable {
-    LOGIN, REQUEST_ROOM, RESPONSE_ROOM
+    LOGIN, REQUEST_ROOM, RESPONSE_ROOM, MAKE_ROOM
 }

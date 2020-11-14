@@ -11,10 +11,7 @@ import datatype.Target;
 import datatype.User;
 import datatype.packet.Packet;
 import datatype.packet.PacketType;
-import util.DataMaker;
-import util.LoginPacketParser;
-import util.Parser;
-import util.RequestRoomPacketParser;
+import util.*;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -43,6 +40,7 @@ public class Connection{
         parserMap = new EnumMap(PacketType.class);
         parserMap.put(PacketType.LOGIN, new LoginPacketParser());
         parserMap.put(PacketType.REQUEST_ROOM, new RequestRoomPacketParser());
+        parserMap.put(PacketType.MAKE_ROOM, new MakeRoomPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -138,7 +136,31 @@ public class Connection{
                         sendOne(response, client);
 
                         ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
+                        ServerFrame.getInstance().appendLogLine("Page: " + receivedPacket.get("page"));
                         ServerFrame.getInstance().appendLogLine("Room count: " + response.getData("totalroom"));
+                    }
+                }
+                else if(target == Target.WAITING_USER){
+                    if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.MAKE_ROOM){
+                        int id = findRoomID();
+                        Room newRoom = new Room(id, receivedPacket.get("roomname"),
+                                Integer.parseInt(receivedPacket.get("maxperson")),
+                                Integer.parseInt(receivedPacket.get("maxround")));
+                        rooms.add(newRoom);
+
+                        ServerFrame.getInstance().appendLogLine("Add Room id " + id);
+                        ServerFrame.getInstance().appendLogLine("Total rooms: " + rooms.size());
+                    }
+
+                    for(User user : users){
+                        if(user.getPageNumber() != -1){
+                            Packet response = responseRoomData(user.getPageNumber());
+                            sendOne(response, user.getSocketChannel());
+
+                            ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
+                            ServerFrame.getInstance().appendLogLine("Page: " + user.getPageNumber());
+                            ServerFrame.getInstance().appendLogLine("Room count: " + response.getData("totalroom"));
+                        }
                     }
                 }
             }
@@ -187,7 +209,7 @@ public class Connection{
                 result.add(rooms.get(i));
                 count++;
             }
-            else if(!rooms.get(count).isGameStarted()){
+            else if((count < page * 10 - 10) && !rooms.get(count).isGameStarted()){
                 count++;
             }
             if(count >= page * 10){
@@ -197,14 +219,36 @@ public class Connection{
 
         int roomIndex = 1;
         int roomCount = 0;
-        for(Room r : rooms){
+        for(Room r : result){
             packet.addData("room" + roomIndex + "_name", r.getName());
             packet.addData("room" + roomIndex + "_maxuser", Integer.toString(r.getMaxUser()));
             packet.addData("room" + roomIndex + "_currentuser", Integer.toString(r.getCurrentUser()));
+            roomIndex++;
             roomCount++;
         }
         packet.addData("totalroom", Integer.toString(roomCount));
 
         return packet;
+    }
+
+    private int findRoomID(){
+        int id = 0;
+        boolean isFind = false;
+        while(rooms.size() != 0){
+            for(Room r : rooms){
+                if(r.getRoomID() == id){
+                    isFind = true;
+                    break;
+                }
+            }
+            if(!isFind){
+                break;
+            }
+            id++;
+            if(id >= rooms.size()){
+                break;
+            }
+        }
+        return id;
     }
 }

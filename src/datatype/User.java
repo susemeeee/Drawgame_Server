@@ -15,10 +15,12 @@ public class User {
     private ImageIcon characterIcon;
     private int pageNumber;
     private boolean isRequestedRoomData;
+    private int roomNumber;
 
     public User(SocketChannel socketChannel){
         this.socketChannel = socketChannel;
         pageNumber = -1;
+        roomNumber = -1;
         isRequestedRoomData = false;
     }
 
@@ -64,5 +66,13 @@ public class User {
 
     public void setRequestedRoomData(boolean requestedRoomData) {
         isRequestedRoomData = requestedRoomData;
+    }
+
+    public int getRoomNumber() {
+        return roomNumber;
+    }
+
+    public void setRoomNumber(int roomNumber) {
+        this.roomNumber = roomNumber;
     }
 }
