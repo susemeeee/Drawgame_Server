@@ -15,6 +15,7 @@ public class User {
     private boolean isRequestedRoomData;
     private int roomNumber;
     private int roomUserID;
+    private boolean isReady;
 
     public User(SocketChannel socketChannel){
         this.socketChannel = socketChannel;
@@ -22,18 +23,11 @@ public class User {
         roomNumber = -1;
         roomUserID = -1;
         isRequestedRoomData = false;
-    }
-
-    public void login(){
-        pageNumber = 1;
+        isReady = false;
     }
 
     public SocketChannel getSocketChannel() {
         return socketChannel;
-    }
-
-    public void setSocketChannel(SocketChannel socketChannel) {
-        this.socketChannel = socketChannel;
     }
 
     public String getName() {
@@ -82,5 +76,13 @@ public class User {
 
     public void setRoomUserID(int roomUserID) {
         this.roomUserID = roomUserID;
+    }
+
+    public boolean isReady() {
+        return isReady;
+    }
+
+    public void setReady(boolean ready) {
+        isReady = ready;
     }
 }

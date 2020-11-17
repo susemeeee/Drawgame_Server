@@ -13,6 +13,7 @@ public class Room {
     private int totalRound;
     private int currentRound;
     private boolean gameStarted;
+    private int readyUserCount;
 
     public Room(int ID, String name, int maxUser, int totalRound){
         this.roomID = ID;
@@ -22,6 +23,7 @@ public class Room {
         this.totalRound = totalRound;
         this.currentRound = 0;
         this.gameStarted = false;
+        readyUserCount = 1;
     }
 
     public int getRoomID() {
@@ -78,5 +80,13 @@ public class Room {
 
     public void setGameStarted(boolean gameStarted) {
         this.gameStarted = gameStarted;
+    }
+
+    public int getReadyUserCount() {
+        return readyUserCount;
+    }
+
+    public void setReadyUserCount(int readyUserCount) {
+        this.readyUserCount = readyUserCount;
     }
 }

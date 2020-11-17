@@ -43,6 +43,7 @@ public class Connection{
         parserMap.put(PacketType.MAKE_ROOM, new MakeRoomPacketParser());
         parserMap.put(PacketType.REQUEST_USER, new RequestUserPacketParser());
         parserMap.put(PacketType.JOIN_ROOM, new JoinRoomPacketParser());
+        parserMap.put(PacketType.READY, new ReadyPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -214,6 +215,37 @@ public class Connection{
                         }
                     }
                 }
+                else if(target == Target.ROOM_USER){
+                    if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.READY){
+                        users.get(userIndex).setReady(Boolean.parseBoolean(receivedPacket.get("status")));
+                        if(users.get(userIndex).isReady()){
+                            findRoom(users.get(userIndex).getRoomNumber())
+                                    .setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() + 1);
+                        }
+                        else{
+                            findRoom(users.get(userIndex).getRoomNumber())
+                                    .setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() - 1);
+                        }
+
+                        int ID = users.get(userIndex).getRoomNumber();
+                        for(User user : users){
+                            if(user.getRoomNumber() == ID){
+                                Packet response = responseUserData(ID);
+                                response.addData("yourID", Integer.toString(user.getRoomUserID()));
+                                sendOne(response, user.getSocketChannel());
+
+                                ServerFrame.getInstance().appendLogLine("Send type: " +
+                                        PacketType.RESPONSE_USER);
+                                ServerFrame.getInstance().appendLogLine("Room ID: " +
+                                        ID);
+                                ServerFrame.getInstance().appendLogLine("Total users: " +
+                                        response.getData("totaluser"));
+                                ServerFrame.getInstance().appendLogLine("Current users: " +
+                                        response.getData("currentuser"));
+                            }
+                        }
+                    }
+                }
             }
         } catch (IOException e) {
             //TODO 연결 끊어짐
@@ -285,6 +317,7 @@ public class Connection{
                 packet.addData("user" + user.getRoomUserID() + "_name", user.getName());
                 packet.addData("user" + user.getRoomUserID() + "_id", Integer.toString(user.getRoomUserID()));
                 packet.addData("user" + user.getRoomUserID() + "_characterIcon", user.getCharacterIcon());
+                packet.addData("user" + user.getRoomUserID() + "_readystatus", Boolean.toString(user.isReady()));
                 count++;
             }
         }
