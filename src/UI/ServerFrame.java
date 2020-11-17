@@ -5,25 +5,20 @@
  */
 package UI;
 
-import datatype.User;
 import net.Connection;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.List;
 
 public class ServerFrame {
     private Connection connection;
-    private List<User> users;
     private boolean isStarted;
 
     private JFrame frame;
-    private GridBagLayout layout;
-    private GridBagConstraints constraints;
     private JTextArea logArea;
     private JPanel logPanel;
     private JButton startButton;
-
+    private JScrollPane scrollPane;
 
     private ServerFrame(){
         frame = new JFrame();
@@ -50,7 +45,7 @@ public class ServerFrame {
 
         logArea = new JTextArea();
         logArea.setEditable(false);
-        JScrollPane scrollPane = new JScrollPane(logArea);
+        scrollPane = new JScrollPane(logArea);
         scrollPane.setVisible(true);
         logArea.setVisible(true);
         logPanel.add(scrollPane);
@@ -80,6 +75,7 @@ public class ServerFrame {
 
     public void appendLogLine(String msg){
         logArea.append(msg + "\n");
+        scrollPane.getVerticalScrollBar().setValue(scrollPane.getVerticalScrollBar().getMaximum());
         frame.repaint();
     }
 

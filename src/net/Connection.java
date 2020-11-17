@@ -41,6 +41,8 @@ public class Connection{
         parserMap.put(PacketType.LOGIN, new LoginPacketParser());
         parserMap.put(PacketType.REQUEST_ROOM, new RequestRoomPacketParser());
         parserMap.put(PacketType.MAKE_ROOM, new MakeRoomPacketParser());
+        parserMap.put(PacketType.REQUEST_USER, new RequestUserPacketParser());
+        parserMap.put(PacketType.JOIN_ROOM, new JoinRoomPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -139,14 +141,62 @@ public class Connection{
                         ServerFrame.getInstance().appendLogLine("Page: " + receivedPacket.get("page"));
                         ServerFrame.getInstance().appendLogLine("Room count: " + response.getData("totalroom"));
                     }
+                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.REQUEST_USER){
+                        Packet response = responseUserData(users.get(userIndex).getRoomNumber());
+                        response.addData("yourID", Integer.toString(users.get(userIndex).getRoomUserID()));
+                        sendOne(response, client);
+
+                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_USER);
+                        ServerFrame.getInstance().appendLogLine("Room ID: " +
+                                users.get(userIndex).getRoomNumber());
+                        ServerFrame.getInstance().appendLogLine("Total users: " +
+                                response.getData("totaluser"));
+                        ServerFrame.getInstance().appendLogLine("Current users: " +
+                                response.getData("currentuser"));
+                    }
+                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.JOIN_ROOM){
+                        int ID = Integer.parseInt(receivedPacket.get("id"));
+                        Packet response = responseJoinRoomResult(ID, users.get(userIndex));
+                        if(response.getData("result").equals("ACCEPT")){
+                            users.get(userIndex).setPageNumber(-1);
+                            users.get(userIndex).setRoomNumber(ID);
+                            users.get(userIndex).setRoomUserID(generateRoomUserID(ID, users.get(userIndex)));
+                        }
+                        sendOne(response, client);
+
+                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.JOIN_ROOM_RESULT);
+                        ServerFrame.getInstance().appendLogLine("Result: " + response.getData("result"));
+
+                        if(response.getData("result").equals("ACCEPT")){
+                            for(User user : users){
+                                if(user.getRoomNumber() == ID){
+                                    response = responseUserData(ID);
+                                    response.addData("yourID", Integer.toString(user.getRoomUserID()));
+                                    sendOne(response, user.getSocketChannel());
+
+                                    ServerFrame.getInstance().appendLogLine("Send type: " +
+                                            PacketType.RESPONSE_USER);
+                                    ServerFrame.getInstance().appendLogLine("Room ID: " +
+                                            ID);
+                                    ServerFrame.getInstance().appendLogLine("Total users: " +
+                                            response.getData("totaluser"));
+                                    ServerFrame.getInstance().appendLogLine("Current users: " +
+                                            response.getData("currentuser"));
+                                }
+                            }
+                        }
+                    }
                 }
                 else if(target == Target.WAITING_USER){
                     if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.MAKE_ROOM){
-                        int id = findRoomID();
+                        int id = generateRoomID();
                         Room newRoom = new Room(id, receivedPacket.get("roomname"),
                                 Integer.parseInt(receivedPacket.get("maxperson")),
                                 Integer.parseInt(receivedPacket.get("maxround")));
                         rooms.add(newRoom);
+
+                        users.get(userIndex).setRoomNumber(id);
+                        users.get(userIndex).setRoomUserID(0);
 
                         ServerFrame.getInstance().appendLogLine("Add Room id " + id);
                         ServerFrame.getInstance().appendLogLine("Total rooms: " + rooms.size());
@@ -159,17 +209,12 @@ public class Connection{
 
                             ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
                             ServerFrame.getInstance().appendLogLine("Page: " + user.getPageNumber());
-                            ServerFrame.getInstance().appendLogLine("Room count: " + response.getData("totalroom"));
+                            ServerFrame.getInstance().appendLogLine("Room count: " +
+                                    response.getData("totalroom"));
                         }
                     }
                 }
             }
-
-
-
-//            if(target == Target.BROADCAST){
-//                //TODO 브로드캐스트
-//            }
         } catch (IOException e) {
             //TODO 연결 끊어짐
             e.printStackTrace();
@@ -223,6 +268,7 @@ public class Connection{
             packet.addData("room" + roomIndex + "_name", r.getName());
             packet.addData("room" + roomIndex + "_maxuser", Integer.toString(r.getMaxUser()));
             packet.addData("room" + roomIndex + "_currentuser", Integer.toString(r.getCurrentUser()));
+            packet.addData("room" + roomIndex + "_id", Integer.toString(r.getRoomID()));
             roomIndex++;
             roomCount++;
         }
@@ -231,7 +277,55 @@ public class Connection{
         return packet;
     }
 
-    private int findRoomID(){
+    private Packet responseUserData(int roomID){
+        Packet packet = new Packet(PacketType.RESPONSE_USER);
+        int count = 0;
+        for(User user : users){
+            if(user.getRoomNumber() == roomID){
+                packet.addData("user" + user.getRoomUserID() + "_name", user.getName());
+                packet.addData("user" + user.getRoomUserID() + "_id", Integer.toString(user.getRoomUserID()));
+                packet.addData("user" + user.getRoomUserID() + "_characterIcon", user.getCharacterIcon());
+                count++;
+            }
+        }
+        Room r = findRoom(roomID);
+        packet.addData("totaluser", Integer.toString(r.getMaxUser()));
+        packet.addData("currentuser", Integer.toString(count));
+
+        return packet;
+    }
+
+    private Packet responseJoinRoomResult(int ID, User client){
+        Room foundRoom = findRoom(ID);
+        Packet response = new Packet(PacketType.JOIN_ROOM_RESULT);
+        if(foundRoom == null) {
+            response.addData("result", "NOT_FOUND");
+        }
+        else if(foundRoom.getCurrentUser() >= foundRoom.getMaxUser()){
+            response.addData("result", "MAX_USER");
+        }
+        else if(foundRoom.isGameStarted()){
+            response.addData("result", "GAME_STARTED");
+        }
+        else{
+            response.addData("result", "ACCEPT");
+            response.addData("userID", Integer.toString(generateRoomUserID(ID, client)));
+            foundRoom.setCurrentUser(foundRoom.getCurrentUser() + 1);
+        }
+
+        return response;
+    }
+
+    private Room findRoom(int ID){
+        for(Room r : rooms){
+            if(r.getRoomID() == ID){
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private int generateRoomID(){
         int id = 0;
         boolean isFind = false;
         while(rooms.size() != 0){
@@ -250,5 +344,28 @@ public class Connection{
             }
         }
         return id;
+    }
+
+    private int generateRoomUserID(int roomID, User client){
+        int id = 0;
+        Room room = findRoom(roomID);
+        boolean[] isGenerated = new boolean[room.getMaxUser()];
+
+        for(int i = 0; i < isGenerated.length; i++){
+            isGenerated[i] = false;
+        }
+
+        for(User user : users){
+            if(user.getRoomNumber() == roomID && !user.equals(client)){
+                isGenerated[user.getRoomUserID()] = true;
+            }
+        }
+
+        for(int i = 0; i < isGenerated.length; i++){
+            if(!isGenerated[i]){
+                return i;
+            }
+        }
+        return -1;
     }
 }

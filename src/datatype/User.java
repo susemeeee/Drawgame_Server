@@ -5,22 +5,22 @@
  */
 package datatype;
 
-
-import javax.swing.*;
 import java.nio.channels.SocketChannel;
 
 public class User {
     private SocketChannel socketChannel;
     private String name;
-    private ImageIcon characterIcon;
+    private String characterIcon;
     private int pageNumber;
     private boolean isRequestedRoomData;
     private int roomNumber;
+    private int roomUserID;
 
     public User(SocketChannel socketChannel){
         this.socketChannel = socketChannel;
         pageNumber = -1;
         roomNumber = -1;
+        roomUserID = -1;
         isRequestedRoomData = false;
     }
 
@@ -44,11 +44,11 @@ public class User {
         this.name = name;
     }
 
-    public ImageIcon getCharacterIcon() {
+    public String getCharacterIcon() {
         return characterIcon;
     }
 
-    public void setCharacterIcon(ImageIcon characterIcon) {
+    public void setCharacterIcon(String characterIcon) {
         this.characterIcon = characterIcon;
     }
 
@@ -74,5 +74,13 @@ public class User {
 
     public void setRoomNumber(int roomNumber) {
         this.roomNumber = roomNumber;
+    }
+
+    public int getRoomUserID() {
+        return roomUserID;
+    }
+
+    public void setRoomUserID(int roomUserID) {
+        this.roomUserID = roomUserID;
     }
 }

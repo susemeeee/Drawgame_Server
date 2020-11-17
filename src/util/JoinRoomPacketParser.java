@@ -1,7 +1,7 @@
 /*
- * LoginPacketParser.java
+ * JoinRoomPacketParser.java
  * Author : 박찬형
- * Created Date : 2020-11-12
+ * Created Date : 2020-11-17
  */
 package util;
 
@@ -11,19 +11,16 @@ import datatype.User;
 
 import java.util.Map;
 
-public class LoginPacketParser extends Parser{
+public class JoinRoomPacketParser extends Parser{
     @Override
     public Target parse(User user, Map<String, String> data) {
-        user.setName(data.get("name"));
-        user.setCharacterIcon(data.get("characterIcon"));
         log(data);
-        return Target.NONE;
+        return Target.SEND_TO_SENDER;
     }
 
     @Override
     public void log(Map<String, String> data) {
         ServerFrame.getInstance().appendLogLine("Received type: " + data.get("type"));
-        ServerFrame.getInstance().appendLogLine("Name : " + data.get("name"));
-        ServerFrame.getInstance().appendLogLine("CharacterIcon: IMAGE");
+        ServerFrame.getInstance().appendLogLine("Room ID: " + data.get("id"));
     }
 }
