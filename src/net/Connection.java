@@ -44,6 +44,7 @@ public class Connection{
         parserMap.put(PacketType.REQUEST_USER, new RequestUserPacketParser());
         parserMap.put(PacketType.JOIN_ROOM, new JoinRoomPacketParser());
         parserMap.put(PacketType.READY, new ReadyPacketParser());
+        parserMap.put(PacketType.CHAT, new ChatPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -201,17 +202,17 @@ public class Connection{
 
                         ServerFrame.getInstance().appendLogLine("Add Room id " + id);
                         ServerFrame.getInstance().appendLogLine("Total rooms: " + rooms.size());
-                    }
 
-                    for(User user : users){
-                        if(user.getPageNumber() != -1){
-                            Packet response = responseRoomData(user.getPageNumber());
-                            sendOne(response, user.getSocketChannel());
+                        for(User user : users){
+                            if(user.getPageNumber() != -1){
+                                Packet response = responseRoomData(user.getPageNumber());
+                                sendOne(response, user.getSocketChannel());
 
-                            ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
-                            ServerFrame.getInstance().appendLogLine("Page: " + user.getPageNumber());
-                            ServerFrame.getInstance().appendLogLine("Room count: " +
-                                    response.getData("totalroom"));
+                                ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
+                                ServerFrame.getInstance().appendLogLine("Page: " + user.getPageNumber());
+                                ServerFrame.getInstance().appendLogLine("Room count: " +
+                                        response.getData("totalroom"));
+                            }
                         }
                     }
                 }
@@ -244,6 +245,24 @@ public class Connection{
                                         response.getData("currentuser"));
                             }
                         }
+                    }
+                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.CHAT){
+                        int id = users.get(userIndex).getRoomNumber();
+
+                        Packet response = new Packet(PacketType.CHAT);
+                        response.addData("content", receivedPacket.get("content"));
+                        response.addData("sender", users.get(userIndex).getName());
+
+                        for(User user : users){
+                            if(user.getRoomNumber() == id){
+                                sendOne(response, user.getSocketChannel());
+                            }
+                        }
+
+                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.CHAT);
+                        ServerFrame.getInstance().appendLogLine("Chat content: " + receivedPacket.get("content"));
+                        ServerFrame.getInstance().appendLogLine("Sender: " +
+                                users.get(userIndex).getName());
                     }
                 }
             }
@@ -328,19 +347,16 @@ public class Connection{
         return packet;
     }
 
-    private Packet responseJoinRoomResult(int ID, User client){
+    private Packet responseJoinRoomResult(int ID, User client) {
         Room foundRoom = findRoom(ID);
         Packet response = new Packet(PacketType.JOIN_ROOM_RESULT);
-        if(foundRoom == null) {
+        if (foundRoom == null) {
             response.addData("result", "NOT_FOUND");
-        }
-        else if(foundRoom.getCurrentUser() >= foundRoom.getMaxUser()){
+        } else if (foundRoom.getCurrentUser() >= foundRoom.getMaxUser()) {
             response.addData("result", "MAX_USER");
-        }
-        else if(foundRoom.isGameStarted()){
+        } else if (foundRoom.isGameStarted()) {
             response.addData("result", "GAME_STARTED");
-        }
-        else{
+        } else {
             response.addData("result", "ACCEPT");
             response.addData("userID", Integer.toString(generateRoomUserID(ID, client)));
             foundRoom.setCurrentUser(foundRoom.getCurrentUser() + 1);
