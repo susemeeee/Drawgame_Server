@@ -9,6 +9,8 @@ import net.Connection;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 public class ServerFrame {
     private Connection connection;
@@ -32,7 +34,13 @@ public class ServerFrame {
         frame.setSize(new Dimension(415, 530));
         frame.setResizable(false);
         frame.setLayout(null);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                connection.stopServer();
+                System.exit(0);
+            }
+        });
         frame.setVisible(true);
     }
 
@@ -65,6 +73,9 @@ public class ServerFrame {
                 frame.repaint();
 
                 isStarted = true;
+            }
+            else{
+                connection.stopServer();
             }
         });
         startButton.setVisible(true);

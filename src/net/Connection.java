@@ -23,6 +23,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Connection{
     private ServerSocketChannel server;
@@ -34,7 +35,7 @@ public class Connection{
     private List<Room> rooms;
 
     public Connection(){
-        users = Collections.synchronizedList(new ArrayList<>());
+        users = Collections.synchronizedList(new CopyOnWriteArrayList<>());
         rooms = Collections.synchronizedList(new ArrayList<>());
 
         parserMap = new EnumMap(PacketType.class);
@@ -46,6 +47,7 @@ public class Connection{
         parserMap.put(PacketType.READY, new ReadyPacketParser());
         parserMap.put(PacketType.CHAT, new ChatPacketParser());
         parserMap.put(PacketType.START_REQUEST, new StartPacketParser());
+        parserMap.put(PacketType.DISCONNECT, new DisconnectPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -279,11 +281,14 @@ public class Connection{
                         }
                     }
                 }
+                else{//Target.NONE
+                    if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.DISCONNECT){
+                        userDisconnected(users.get(userIndex));
+                    }
+                }
             }
         } catch (IOException e) {
-            //TODO 연결 끊어짐
-            e.printStackTrace();
-            System.exit(1); //temp
+            stopServer();
         }
     }
 
@@ -293,12 +298,36 @@ public class Connection{
             buffer = charset.encode(data.toString());
             client.write(buffer);
         } catch (IOException e) {
-            e.printStackTrace();
+            userDisconnected(users.get(findUser(client)));
         }
     }
 
     public void stopServer(){
-        //TODO stop버튼 누를 시 서버 중지`
+        Packet packet = new Packet(PacketType.DISCONNECT);
+        for(User user : users){
+            sendOne(packet, user.getSocketChannel());
+            userDisconnected(user);
+        }
+        try {
+            server.close();
+            System.exit(0);
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
+    }
+
+    private void userDisconnected(User user){
+        ServerFrame.getInstance().appendLogLine(user.getName() + " disconnect");
+        if(user.getRoomNumber() != -1){
+            //TODO 방 나가기 처리
+        }
+        try {
+            user.getSocketChannel().close();
+            users.remove(user);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private int findUser(SocketChannel socketChannel){
