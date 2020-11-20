@@ -12,7 +12,7 @@ public class DataMaker {
     public static Map<String, String> make(String data){
         Map<String, String> result = new HashMap<>();
         String[] array = data.split("\\{\"|\":\"|\", \"|\"}");
-        for(int i = 1; i < array.length; i += 2){
+        for(int i = 1; i < array.length - 1; i += 2){
             result.put(array[i], array[i + 1]);
         }
         return result;

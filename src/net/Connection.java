@@ -45,6 +45,7 @@ public class Connection{
         parserMap.put(PacketType.JOIN_ROOM, new JoinRoomPacketParser());
         parserMap.put(PacketType.READY, new ReadyPacketParser());
         parserMap.put(PacketType.CHAT, new ChatPacketParser());
+        parserMap.put(PacketType.START_REQUEST, new StartPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -219,32 +220,25 @@ public class Connection{
                 else if(target == Target.ROOM_USER){
                     if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.READY){
                         users.get(userIndex).setReady(Boolean.parseBoolean(receivedPacket.get("status")));
+                        Room room = findRoom(users.get(userIndex).getRoomNumber());
                         if(users.get(userIndex).isReady()){
-                            findRoom(users.get(userIndex).getRoomNumber())
-                                    .setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() + 1);
+                            room.setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() + 1);
                         }
                         else{
-                            findRoom(users.get(userIndex).getRoomNumber())
-                                    .setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() - 1);
+                            room.setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() - 1);
                         }
 
                         int ID = users.get(userIndex).getRoomNumber();
+                        Packet response = responseReadyStatus(ID);
                         for(User user : users){
                             if(user.getRoomNumber() == ID){
-                                Packet response = responseUserData(ID);
-                                response.addData("yourID", Integer.toString(user.getRoomUserID()));
                                 sendOne(response, user.getSocketChannel());
-
-                                ServerFrame.getInstance().appendLogLine("Send type: " +
-                                        PacketType.RESPONSE_USER);
-                                ServerFrame.getInstance().appendLogLine("Room ID: " +
-                                        ID);
-                                ServerFrame.getInstance().appendLogLine("Total users: " +
-                                        response.getData("totaluser"));
-                                ServerFrame.getInstance().appendLogLine("Current users: " +
-                                        response.getData("currentuser"));
                             }
                         }
+                        ServerFrame.getInstance().appendLogLine("Send type: " +
+                                PacketType.READY);
+                        ServerFrame.getInstance().appendLogLine("Room ID: " +
+                                ID);
                     }
                     else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.CHAT){
                         int id = users.get(userIndex).getRoomNumber();
@@ -263,6 +257,26 @@ public class Connection{
                         ServerFrame.getInstance().appendLogLine("Chat content: " + receivedPacket.get("content"));
                         ServerFrame.getInstance().appendLogLine("Sender: " +
                                 users.get(userIndex).getName());
+                    }
+                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.START_REQUEST){
+                        int ID = users.get(userIndex).getRoomNumber();
+                        Room room = findRoom(ID);
+                        boolean status = room.getReadyUserCount() == room.getCurrentUser();
+                        Packet response;
+                        for(User user : users){
+                            if((user.getRoomNumber() == ID) && (user.getRoomUserID() == 0)){
+                                response = new Packet(PacketType.START_REQUEST);
+                                response.addData("status", Boolean.toString(status));
+                                sendOne(response, user.getSocketChannel());
+                                ServerFrame.getInstance().appendLogLine("Send type: " +
+                                        PacketType.START_REQUEST);
+                                ServerFrame.getInstance().appendLogLine("Status: " +
+                                        response.getData("status"));
+                            }
+                            if((user.getRoomNumber() == ID) && status){
+                                //TODO 여기서부터 게임 시작 또다른 패킷
+                            }
+                        }
                     }
                 }
             }
@@ -336,7 +350,6 @@ public class Connection{
                 packet.addData("user" + user.getRoomUserID() + "_name", user.getName());
                 packet.addData("user" + user.getRoomUserID() + "_id", Integer.toString(user.getRoomUserID()));
                 packet.addData("user" + user.getRoomUserID() + "_characterIcon", user.getCharacterIcon());
-                packet.addData("user" + user.getRoomUserID() + "_readystatus", Boolean.toString(user.isReady()));
                 count++;
             }
         }
@@ -363,6 +376,17 @@ public class Connection{
         }
 
         return response;
+    }
+
+    private Packet responseReadyStatus(int ID){
+        Packet packet = new Packet(PacketType.READY);
+        for(User user : users){
+            if(user.getRoomNumber() == ID){
+                packet.addData("user" + user.getRoomUserID() + "_readystatus", Boolean.toString(user.isReady()));
+            }
+        }
+
+        return packet;
     }
 
     private Room findRoom(int ID){
