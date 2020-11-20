@@ -48,6 +48,7 @@ public class Connection{
         parserMap.put(PacketType.CHAT, new ChatPacketParser());
         parserMap.put(PacketType.START_REQUEST, new StartPacketParser());
         parserMap.put(PacketType.DISCONNECT, new DisconnectPacketParser());
+        parserMap.put(PacketType.QUIT_ROOM, new QuitRoomPacketParser());
     }
 
     public void startServer(String address, int port){
@@ -114,7 +115,7 @@ public class Connection{
     }
 
     private void read(SelectionKey key){
-        ByteBuffer data = ByteBuffer.allocate(1048576);
+        ByteBuffer data = ByteBuffer.allocate(1024);
         buffer = ByteBuffer.allocate(1048576);
         try {
             buffer.clear();
@@ -123,7 +124,7 @@ public class Connection{
             while(client.read(data) > 0){
                 data.flip();
                 buffer.put(data);
-                data = ByteBuffer.allocate(1048576);
+                data = ByteBuffer.allocate(1024);
             }
             buffer.flip();
             byte[] array = new byte[buffer.limit()];
@@ -131,7 +132,7 @@ public class Connection{
             Map<String, String> receivedPacket = DataMaker.make(new String(array));
 
             int userIndex = findUser(client);
-            Target target = Target.NONE;
+            Target target;
             if(userIndex != -1){
                 target = parserMap.get(PacketType.valueOf(receivedPacket.get("type")))
                         .parse(users.get(userIndex), receivedPacket);
@@ -280,6 +281,9 @@ public class Connection{
                             }
                         }
                     }
+                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.QUIT_ROOM){
+                        userQuited(userIndex);
+                    }
                 }
                 else{//Target.NONE
                     if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.DISCONNECT){
@@ -309,7 +313,9 @@ public class Connection{
             userDisconnected(user);
         }
         try {
-            server.close();
+            if(server != null){
+                server.close();
+            }
             System.exit(0);
         } catch (IOException e) {
             e.printStackTrace();
@@ -320,7 +326,7 @@ public class Connection{
     private void userDisconnected(User user){
         ServerFrame.getInstance().appendLogLine(user.getName() + " disconnect");
         if(user.getRoomNumber() != -1){
-            //TODO 방 나가기 처리
+            userQuited(findUser(user.getSocketChannel()));
         }
         try {
             user.getSocketChannel().close();
@@ -417,6 +423,71 @@ public class Connection{
 
         return packet;
     }
+
+    private void userQuited(int userIndex){
+        User user = users.get(userIndex);
+        Room room = findRoom(user.getRoomNumber());
+        int ID = user.getRoomNumber();
+        if(user.getRoomUserID() == 0 && (room.getCurrentUser() != 1)){
+            int findTarget = 1;
+            boolean isFind = false;
+            while(!isFind){
+                for(User u : users){
+                    if((u.getRoomNumber() == room.getRoomID()) && (u.getRoomUserID() == findTarget)){
+                        u.setRoomUserID(0);
+                        isFind = true;
+                        break;
+                    }
+                }
+                findTarget++;
+            }
+        }
+        if(user.isReady()){
+            room.setReadyUserCount(room.getReadyUserCount() - 1);
+        }
+        room.setCurrentUser(room.getCurrentUser() - 1);
+
+        user.setReady(false);
+        user.setRoomNumber(-1);
+        user.setRoomUserID(-1);
+        user.setPageNumber(1);
+
+        Packet response;
+        if(room.getCurrentUser() != 0){
+            response = responseUserData(ID);
+            for(User u : users){
+                if(u.getRoomNumber() == ID){
+                    response.addData("yourID", Integer.toString(u.getRoomUserID()));
+                    sendOne(response, u.getSocketChannel());
+
+                    ServerFrame.getInstance().appendLogLine("Send type: " +
+                            PacketType.RESPONSE_USER);
+                    ServerFrame.getInstance().appendLogLine("Room ID: " +
+                            ID);
+                    ServerFrame.getInstance().appendLogLine("Total users: " +
+                            response.getData("totaluser"));
+                    ServerFrame.getInstance().appendLogLine("Current users: " +
+                            response.getData("currentuser"));
+                }
+            }
+        }
+        else{
+            rooms.remove(room);
+
+            for(User u : users){
+                if(u.getPageNumber() != -1 && !u.equals(user)){
+                    response = responseRoomData(u.getPageNumber());
+                    sendOne(response, u.getSocketChannel());
+
+                    ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
+                    ServerFrame.getInstance().appendLogLine("Page: " + u.getPageNumber());
+                    ServerFrame.getInstance().appendLogLine("Room count: " +
+                            response.getData("totalroom"));
+                }
+            }
+        }
+    }
+
 
     private Room findRoom(int ID){
         for(Room r : rooms){
