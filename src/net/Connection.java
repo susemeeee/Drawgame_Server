@@ -7,7 +7,6 @@ package net;
 
 import UI.ServerFrame;
 import datatype.Room;
-import datatype.Target;
 import datatype.User;
 import datatype.packet.Packet;
 import datatype.packet.PacketType;
@@ -24,31 +23,21 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class Connection{
     private ServerSocketChannel server;
     private Selector selector;
     private Thread serverThread;
     private List<User> users;
-    private EnumMap<PacketType, Parser> parserMap;
     private ByteBuffer buffer;
     private List<Room> rooms;
+    private WordGenerator wordGenerator;
 
     public Connection(){
         users = Collections.synchronizedList(new CopyOnWriteArrayList<>());
-        rooms = Collections.synchronizedList(new ArrayList<>());
-
-        parserMap = new EnumMap(PacketType.class);
-        parserMap.put(PacketType.LOGIN, new LoginPacketParser());
-        parserMap.put(PacketType.REQUEST_ROOM, new RequestRoomPacketParser());
-        parserMap.put(PacketType.MAKE_ROOM, new MakeRoomPacketParser());
-        parserMap.put(PacketType.REQUEST_USER, new RequestUserPacketParser());
-        parserMap.put(PacketType.JOIN_ROOM, new JoinRoomPacketParser());
-        parserMap.put(PacketType.READY, new ReadyPacketParser());
-        parserMap.put(PacketType.CHAT, new ChatPacketParser());
-        parserMap.put(PacketType.START_REQUEST, new StartPacketParser());
-        parserMap.put(PacketType.DISCONNECT, new DisconnectPacketParser());
-        parserMap.put(PacketType.QUIT_ROOM, new QuitRoomPacketParser());
+        rooms = Collections.synchronizedList(new CopyOnWriteArrayList<>());
+        wordGenerator = new WordGenerator();
     }
 
     public void startServer(String address, int port){
@@ -68,7 +57,7 @@ public class Connection{
         serverThread = new Thread(() -> {
             while(true){
                 try {
-                    selector.select();
+                    selector.select(100);
                     Iterator<?> keys = selector.selectedKeys().iterator();
 
                     while(keys.hasNext()){
@@ -90,6 +79,73 @@ public class Connection{
                     }
                 }catch (IOException e){
                     e.printStackTrace();
+                }
+
+                for(Room room : rooms){
+                    if(room.isGameStarted()){
+                        List<Integer> IDList = getIDList(room);
+                        if(!room.isRoundInProgress()){
+                            if(room.getCurrentRound() >= room.getTotalRound()){
+                                Packet packet = getGameResult(room);
+                                room.setRoundStartTime(0L);
+                                room.setCurrentRound(0);
+                                room.setRoundInProgress(false);
+                                room.setGameStarted(false);
+                                room.setReadyUserCount(1);
+
+                                for(User user : users){
+                                    if(user.getRoomNumber() == room.getRoomID()){
+                                        sendOne(packet, user.getSocketChannel());
+                                    }
+                                }
+                                ServerFrame.getInstance().appendLogLine(
+                                        "Send type: " + PacketType.END_GAME);
+                                continue;
+                            }
+
+                            room.setCurrentRound(room.getCurrentRound() + 1);
+                            room.setTestTakerID(IDList.get(ThreadLocalRandom.current()
+                                    .nextInt(0, IDList.size())));
+                            room.setCurrentAnswer(wordGenerator.generateRandomWord());
+                            Packet packet = new Packet(PacketType.START_ROUND);
+                            long curTime = System.currentTimeMillis();
+                            packet.addData("round", Integer.toString(room.getCurrentRound()));
+                            packet.addData("time", Long.toString(curTime));
+                            for(User user : users){
+                                if(room.getRoomID() == user.getRoomNumber()){
+                                    if(room.getTestTakerID() == user.getRoomUserID()){
+                                        packet.addData("testtaker", Boolean.toString(true));
+                                        packet.addData("word", room.getCurrentAnswer());
+                                    }
+                                    else{
+                                        packet.addData("testtaker", Boolean.toString(false));
+                                        packet.addData("word", "null");
+                                    }
+                                    sendOne(packet, user.getSocketChannel());
+                                    ServerFrame.getInstance().appendLogLine(
+                                            "Send type: " + PacketType.START_ROUND);
+                                }
+                            }
+                            room.setRoundStartTime(curTime);
+                            room.setRoundInProgress(true);
+                        }
+                        else {
+                            if((!IDList.contains(room.getTestTakerID())) ||
+                                    ((System.currentTimeMillis() - room.getRoundStartTime()) >= 60000)){
+                                Packet packet = new Packet(PacketType.END_ROUND);
+                                room.setTestTakerID(-1);
+                                room.setCurrentAnswer(null);
+                                for(User user : users){
+                                    if(room.getRoomID() == user.getRoomNumber()){
+                                        sendOne(packet, user.getSocketChannel());
+                                        ServerFrame.getInstance().appendLogLine(
+                                                "Send type: " + PacketType.END_ROUND);
+                                    }
+                                }
+                                room.setRoundInProgress(false);
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -132,163 +188,246 @@ public class Connection{
             Map<String, String> receivedPacket = DataMaker.make(new String(array));
 
             int userIndex = findUser(client);
-            Target target;
-            if(userIndex != -1){
-                target = parserMap.get(PacketType.valueOf(receivedPacket.get("type")))
-                        .parse(users.get(userIndex), receivedPacket);
+            if(userIndex != -1 && !receivedPacket.isEmpty()){
+                PacketType type = PacketType.valueOf(receivedPacket.get("type"));
 
-                if(target == Target.SEND_TO_SENDER){
-                    if(users.get(userIndex).isRequestedRoomData()){
-                        Packet response = responseRoomData(Integer.parseInt(receivedPacket.get("page")));
-                        users.get(userIndex).setRequestedRoomData(false);
-                        sendOne(response, client);
+                if(type == PacketType.LOGIN){
+                    User user = users.get(userIndex);
+                    user.setName(receivedPacket.get("name"));
+                    user.setCharacterIcon(receivedPacket.get("characterIcon"));
 
-                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
-                        ServerFrame.getInstance().appendLogLine("Page: " + receivedPacket.get("page"));
-                        ServerFrame.getInstance().appendLogLine("Room count: " + response.getData("totalroom"));
-                    }
-                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.REQUEST_USER){
-                        Packet response = responseUserData(users.get(userIndex).getRoomNumber());
-                        response.addData("yourID", Integer.toString(users.get(userIndex).getRoomUserID()));
-                        sendOne(response, client);
-
-                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_USER);
-                        ServerFrame.getInstance().appendLogLine("Room ID: " +
-                                users.get(userIndex).getRoomNumber());
-                        ServerFrame.getInstance().appendLogLine("Total users: " +
-                                response.getData("totaluser"));
-                        ServerFrame.getInstance().appendLogLine("Current users: " +
-                                response.getData("currentuser"));
-                    }
-                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.JOIN_ROOM){
-                        int ID = Integer.parseInt(receivedPacket.get("id"));
-                        Packet response = responseJoinRoomResult(ID, users.get(userIndex));
-                        if(response.getData("result").equals("ACCEPT")){
-                            users.get(userIndex).setPageNumber(-1);
-                            users.get(userIndex).setRoomNumber(ID);
-                            users.get(userIndex).setRoomUserID(generateRoomUserID(ID, users.get(userIndex)));
-                        }
-                        sendOne(response, client);
-
-                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.JOIN_ROOM_RESULT);
-                        ServerFrame.getInstance().appendLogLine("Result: " + response.getData("result"));
-
-                        if(response.getData("result").equals("ACCEPT")){
-                            for(User user : users){
-                                if(user.getRoomNumber() == ID){
-                                    response = responseUserData(ID);
-                                    response.addData("yourID", Integer.toString(user.getRoomUserID()));
-                                    sendOne(response, user.getSocketChannel());
-
-                                    ServerFrame.getInstance().appendLogLine("Send type: " +
-                                            PacketType.RESPONSE_USER);
-                                    ServerFrame.getInstance().appendLogLine("Room ID: " +
-                                            ID);
-                                    ServerFrame.getInstance().appendLogLine("Total users: " +
-                                            response.getData("totaluser"));
-                                    ServerFrame.getInstance().appendLogLine("Current users: " +
-                                            response.getData("currentuser"));
-                                }
-                            }
-                        }
-                    }
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Name : " + receivedPacket.get("name"));
+                    messages.add("CharacterIcon: IMAGE(len: " + receivedPacket.get("characterIcon").length() + ")");
+                    log(messages);
                 }
-                else if(target == Target.WAITING_USER){
-                    if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.MAKE_ROOM){
-                        int id = generateRoomID();
-                        Room newRoom = new Room(id, receivedPacket.get("roomname"),
-                                Integer.parseInt(receivedPacket.get("maxperson")),
-                                Integer.parseInt(receivedPacket.get("maxround")));
-                        rooms.add(newRoom);
+                else if(type == PacketType.REQUEST_ROOM){
+                    User user = users.get(userIndex);
+                    user.setPageNumber(Integer.parseInt(receivedPacket.get("page")));
 
-                        users.get(userIndex).setRoomNumber(id);
-                        users.get(userIndex).setRoomUserID(0);
+                    Packet response = responseRoomData(Integer.parseInt(receivedPacket.get("page")));
+                    sendOne(response, client);
 
-                        ServerFrame.getInstance().appendLogLine("Add Room id " + id);
-                        ServerFrame.getInstance().appendLogLine("Total rooms: " + rooms.size());
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Page number: " + receivedPacket.get("page"));
+                    messages.add("Send type: " + PacketType.RESPONSE_ROOM);
+                    messages.add("Page: " + receivedPacket.get("page"));
+                    messages.add("Room count: " + response.getData("totalroom"));
+                    log(messages);
+                }
+                else if(type == PacketType.MAKE_ROOM){
+                    User curUser = users.get(userIndex);
+                    curUser.setPageNumber(-1);
+                    int id = generateRoomID();
+                    Room newRoom = new Room(id, receivedPacket.get("roomname"),
+                            Integer.parseInt(receivedPacket.get("maxperson")),
+                            Integer.parseInt(receivedPacket.get("maxround")));
+                    rooms.add(newRoom);
+                    users.get(userIndex).setRoomNumber(id);
+                    users.get(userIndex).setRoomUserID(0);
 
-                        for(User user : users){
-                            if(user.getPageNumber() != -1){
-                                Packet response = responseRoomData(user.getPageNumber());
-                                sendOne(response, user.getSocketChannel());
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Room name: " + receivedPacket.get("roomname"));
+                    messages.add("Max person: " + receivedPacket.get("maxperson"));
+                    messages.add("Round: " + receivedPacket.get("maxround"));
+                    messages.add("Add Room id " + id);
+                    messages.add("Total rooms: " + rooms.size());
+                    log(messages);
+                    messages = new ArrayList<>();
 
-                                ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.RESPONSE_ROOM);
-                                ServerFrame.getInstance().appendLogLine("Page: " + user.getPageNumber());
-                                ServerFrame.getInstance().appendLogLine("Room count: " +
-                                        response.getData("totalroom"));
-                            }
+                    for(User user : users){
+                        if(user.getPageNumber() != -1){
+                            Packet response = responseRoomData(user.getPageNumber());
+                            sendOne(response, user.getSocketChannel());
+
+                            messages.add("Send type: " + PacketType.RESPONSE_ROOM);
+                            messages.add("Page: " + user.getPageNumber());
+                            messages.add("Room count: " + response.getData("totalroom"));
                         }
                     }
+                    log(messages);
                 }
-                else if(target == Target.ROOM_USER){
-                    if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.READY){
-                        users.get(userIndex).setReady(Boolean.parseBoolean(receivedPacket.get("status")));
-                        Room room = findRoom(users.get(userIndex).getRoomNumber());
-                        if(users.get(userIndex).isReady()){
-                            room.setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() + 1);
-                        }
-                        else{
-                            room.setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber()).getReadyUserCount() - 1);
-                        }
+                else if(type == PacketType.REQUEST_USER){
+                    Packet response = responseUserData(users.get(userIndex).getRoomNumber());
+                    response.addData("yourID", Integer.toString(users.get(userIndex).getRoomUserID()));
+                    sendOne(response, client);
 
-                        int ID = users.get(userIndex).getRoomNumber();
-                        Packet response = responseReadyStatus(ID);
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Send type: " + PacketType.RESPONSE_USER);
+                    messages.add("Room ID: " + users.get(userIndex).getRoomNumber());
+                    messages.add("Total users: " + response.getData("totaluser"));
+                    messages.add("Current users: " + response.getData("currentuser"));
+                    log(messages);
+                }
+                else if(type == PacketType.JOIN_ROOM){
+                    int ID = Integer.parseInt(receivedPacket.get("id"));
+                    Packet response = responseJoinRoomResult(ID, users.get(userIndex));
+                    if(response.getData("result").equals("ACCEPT")){
+                        users.get(userIndex).setPageNumber(-1);
+                        users.get(userIndex).setRoomNumber(ID);
+                        users.get(userIndex).setRoomUserID(generateRoomUserID(ID, users.get(userIndex)));
+                    }
+                    sendOne(response, client);
+
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Room ID: " + receivedPacket.get("id"));
+                    messages.add("Send type: " + PacketType.JOIN_ROOM_RESULT);
+                    messages.add("Result: " + response.getData("result"));
+                    log(messages);
+
+                    if(response.getData("result").equals("ACCEPT")){
+                        messages = new ArrayList<>();
                         for(User user : users){
                             if(user.getRoomNumber() == ID){
+                                response = responseUserData(ID);
+                                response.addData("yourID", Integer.toString(user.getRoomUserID()));
                                 sendOne(response, user.getSocketChannel());
+
+                                messages.add("Send type: " + PacketType.RESPONSE_USER);
+                                messages.add("Room ID: " + ID);
+                                messages.add("Total users: " + response.getData("totaluser"));
+                                messages.add("Current users: " + response.getData("currentuser"));
                             }
                         }
-                        ServerFrame.getInstance().appendLogLine("Send type: " +
-                                PacketType.READY);
-                        ServerFrame.getInstance().appendLogLine("Room ID: " +
-                                ID);
-                    }
-                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.CHAT){
-                        int id = users.get(userIndex).getRoomNumber();
-
-                        Packet response = new Packet(PacketType.CHAT);
-                        response.addData("content", receivedPacket.get("content"));
-                        response.addData("sender", users.get(userIndex).getName());
-
-                        for(User user : users){
-                            if(user.getRoomNumber() == id){
-                                sendOne(response, user.getSocketChannel());
-                            }
-                        }
-
-                        ServerFrame.getInstance().appendLogLine("Send type: " + PacketType.CHAT);
-                        ServerFrame.getInstance().appendLogLine("Chat content: " + receivedPacket.get("content"));
-                        ServerFrame.getInstance().appendLogLine("Sender: " +
-                                users.get(userIndex).getName());
-                    }
-                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.START_REQUEST){
-                        int ID = users.get(userIndex).getRoomNumber();
-                        Room room = findRoom(ID);
-                        boolean status = room.getReadyUserCount() == room.getCurrentUser();
-                        Packet response;
-                        for(User user : users){
-                            if((user.getRoomNumber() == ID) && (user.getRoomUserID() == 0)){
-                                response = new Packet(PacketType.START_REQUEST);
-                                response.addData("status", Boolean.toString(status));
-                                sendOne(response, user.getSocketChannel());
-                                ServerFrame.getInstance().appendLogLine("Send type: " +
-                                        PacketType.START_REQUEST);
-                                ServerFrame.getInstance().appendLogLine("Status: " +
-                                        response.getData("status"));
-                            }
-                            if((user.getRoomNumber() == ID) && status){
-                                //TODO 여기서부터 게임 시작 또다른 패킷
-                            }
-                        }
-                    }
-                    else if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.QUIT_ROOM){
-                        userQuited(userIndex);
+                        log(messages);
                     }
                 }
-                else{//Target.NONE
-                    if(PacketType.valueOf(receivedPacket.get("type")) == PacketType.DISCONNECT){
-                        userDisconnected(users.get(userIndex));
+                else if(type == PacketType.READY){
+                    if(!receivedPacket.get("status").equals("request")){
+                        users.get(userIndex).setReady(Boolean.parseBoolean(receivedPacket.get("status")));
+                        Room room = findRoom(users.get(userIndex).getRoomNumber());
+                        assert room != null;
+                        if(users.get(userIndex).isReady()){
+                            room.setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber())
+                                    .getReadyUserCount() + 1);
+                        }
+                        else{
+                            room.setReadyUserCount(findRoom(users.get(userIndex).getRoomNumber())
+                                    .getReadyUserCount() - 1);
+                        }
                     }
+
+                    int ID = users.get(userIndex).getRoomNumber();
+                    Packet response = responseReadyStatus(ID);
+                    for(User user : users){
+                        if(user.getRoomNumber() == ID){
+                            sendOne(response, user.getSocketChannel());
+                        }
+                    }
+
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Ready status: " + receivedPacket.get("status"));
+                    messages.add("Send type: " + PacketType.READY);
+                    messages.add("Room ID: " + ID);
+                    log(messages);
+                }
+                else if(type == PacketType.CHAT){
+                    int id = users.get(userIndex).getRoomNumber();
+
+                    Packet response = new Packet(PacketType.CHAT);
+                    response.addData("content", receivedPacket.get("content"));
+                    response.addData("sender", users.get(userIndex).getName());
+
+                    for(User user : users){
+                        if(user.getRoomNumber() == id){
+                            sendOne(response, user.getSocketChannel());
+                        }
+                    }
+
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+                    messages.add("Chat content: " + receivedPacket.get("content"));
+                    messages.add("Send type: " + PacketType.CHAT);
+                    messages.add("Chat content: " + receivedPacket.get("content"));
+                    messages.add("Sender: " + users.get(userIndex).getName());
+                    log(messages);
+
+                    Room room = findRoom(users.get(userIndex).getRoomNumber());
+                    assert room != null;
+                    if(room.isGameStarted() && room.isRoundInProgress() &&
+                            room.getCurrentAnswer().equals(receivedPacket.get("content")) &&
+                            (users.get(userIndex).getRoomUserID() != room.getTestTakerID())){
+                        Packet packet = new Packet(PacketType.END_ROUND);
+                        packet.addData("score", users.get(userIndex).getName());
+                        users.get(userIndex).setScore(users.get(userIndex).getScore() + 1);
+                        room.setTestTakerID(-1);
+                        room.setCurrentAnswer(null);
+                        for(User user : users){
+                            if(room.getRoomID() == user.getRoomNumber()){
+                                sendOne(packet, user.getSocketChannel());
+                                ServerFrame.getInstance().appendLogLine(
+                                        "Send type: " + PacketType.END_ROUND);
+                            }
+                        }
+                        room.setRoundInProgress(false);
+                    }
+                }
+                else if(type == PacketType.START_REQUEST){
+                    int ID = users.get(userIndex).getRoomNumber();
+                    Room room = findRoom(ID);
+                    assert room != null;
+                    boolean status = (room.getReadyUserCount() != 1) && (room.getReadyUserCount() == room.getCurrentUser());
+
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Received type: " + receivedPacket.get("type"));
+
+                    Packet response;
+                    for(User user : users){
+                        if((user.getRoomNumber() == ID) && (user.getRoomUserID() == 0)){
+                            response = new Packet(PacketType.START_REQUEST);
+                            response.addData("status", Boolean.toString(status));
+                            sendOne(response, user.getSocketChannel());
+
+                            messages.add("Send type: " + PacketType.START_REQUEST);
+                            messages.add("Status: " + response.getData("status"));
+                        }
+                        if((user.getRoomNumber() == ID) && status){
+                            response = new Packet(PacketType.START_GAME);
+                            sendOne(response, user.getSocketChannel());
+
+                            messages.add("Send type: " + PacketType.START_GAME);
+                        }
+                    }
+                    if(status){
+                        room.setGameStarted(true);
+                    }
+                    log(messages);
+                }
+                else if(type == PacketType.DISCONNECT){
+                    userDisconnected(users.get(userIndex));
+
+                    ServerFrame.getInstance().appendLogLine("Received type: " + receivedPacket.get("type"));
+                }
+                else if(type == PacketType.QUIT_ROOM){
+                    userQuited(userIndex);
+
+                    ServerFrame.getInstance().appendLogLine("Received type: " + receivedPacket.get("type"));
+                }
+                else if(type == PacketType.DRAW){
+                    ServerFrame.getInstance().appendLogLine("Received type: " + receivedPacket.get("type"));
+
+                    Packet packet = new Packet(PacketType.DRAW);
+                    packet.addData("image", receivedPacket.get("image"));
+
+                    List<String> messages = new ArrayList<>();
+                    messages.add("Send type: " + PacketType.DRAW);
+                    messages.add("Draw: IMAGE(len: " + receivedPacket.get("image").length() + ")");
+                    int count = 0;
+                    for(User user : users){
+                        if((user.getRoomNumber() == users.get(userIndex).getRoomNumber()) &&
+                                (user.getRoomUserID() != findRoom(user.getRoomNumber()).getTestTakerID())){
+                            sendOne(packet, user.getSocketChannel());
+                            count++;
+                        }
+                    }
+                    messages.add("Send user count: " + count);
+                    log(messages);
                 }
             }
         } catch (IOException e) {
@@ -301,6 +440,7 @@ public class Connection{
             Charset charset = StandardCharsets.UTF_8;
             buffer = charset.encode(data.toString());
             client.write(buffer);
+            buffer.rewind();
         } catch (IOException e) {
             userDisconnected(users.get(findUser(client)));
         }
@@ -540,5 +680,65 @@ public class Connection{
             }
         }
         return -1;
+    }
+
+    public List<Integer> getIDList(Room room){
+        List<Integer> result = new ArrayList<>();
+        for(User user : users){
+            if(user.getRoomNumber() == room.getRoomID()){
+                result.add(user.getRoomUserID());
+            }
+        }
+        return result;
+    }
+
+    private Packet getGameResult(Room room){
+        Packet packet = new Packet(PacketType.END_GAME);
+        List<String> names = new ArrayList<>();
+        List<Integer> scores = new ArrayList<>();
+
+        for(User user : users){
+            if(room.getRoomID() == user.getRoomNumber()){
+                names.add(user.getName());
+                scores.add(user.getScore());
+
+                user.setReady(false);
+                user.setScore(0);
+            }
+        }
+
+        int[] ranks = new int[names.size()];
+        for(int i = 0; i < ranks.length; i++){
+            ranks[i] = 0;
+        }
+
+        for(int i = 0; i < ranks.length; i++){
+            for(int j = 0; j < scores.size(); j++){
+                if(scores.get(i) < scores.get(j)){
+                    ranks[i]++;
+                }
+            }
+        }
+
+        String[] resultNames = new String[names.size()];
+        int[] resultScores = new int[names.size()];
+
+        for(int i = 0; i < ranks.length; i++){
+            resultScores[ranks[i]] = scores.get(i);
+            resultNames[ranks[i]] = names.get(i);
+        }
+
+        for(int i = 0; i < resultNames.length; i++){
+            packet.addData("rank" + i + "_name", resultNames[i]);
+            packet.addData("rank" + i + "_score", Integer.toString(resultScores[i]));
+        }
+
+        return packet;
+    }
+
+    private void log(List<String> messages){
+        for(String s : messages){
+            ServerFrame.getInstance().appendLogLine(s);
+        }
     }
 }

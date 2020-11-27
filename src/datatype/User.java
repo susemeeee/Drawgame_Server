@@ -12,18 +12,18 @@ public class User {
     private String name;
     private String characterIcon;
     private int pageNumber;
-    private boolean isRequestedRoomData;
     private int roomNumber;
     private int roomUserID;
     private boolean isReady;
+    private int score;
 
     public User(SocketChannel socketChannel){
         this.socketChannel = socketChannel;
         pageNumber = -1;
         roomNumber = -1;
         roomUserID = -1;
-        isRequestedRoomData = false;
         isReady = false;
+        score = 0;
     }
 
     public SocketChannel getSocketChannel() {
@@ -54,14 +54,6 @@ public class User {
         this.pageNumber = pageNumber;
     }
 
-    public boolean isRequestedRoomData() {
-        return isRequestedRoomData;
-    }
-
-    public void setRequestedRoomData(boolean requestedRoomData) {
-        isRequestedRoomData = requestedRoomData;
-    }
-
     public int getRoomNumber() {
         return roomNumber;
     }
@@ -84,5 +76,13 @@ public class User {
 
     public void setReady(boolean ready) {
         isReady = ready;
+    }
+
+    public int getScore() {
+        return score;
+    }
+
+    public void setScore(int score) {
+        this.score = score;
     }
 }

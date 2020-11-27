@@ -5,9 +5,7 @@
  */
 package datatype.packet;
 
-import java.io.Serializable;
-
-public enum PacketType implements Serializable {
+public enum PacketType{
     LOGIN, REQUEST_ROOM, RESPONSE_ROOM, MAKE_ROOM, REQUEST_USER, RESPONSE_USER, JOIN_ROOM, JOIN_ROOM_RESULT,
-    READY, CHAT, START_REQUEST, DISCONNECT, QUIT_ROOM
+    READY, CHAT, START_REQUEST, DISCONNECT, QUIT_ROOM, START_GAME, START_ROUND, END_ROUND, DRAW, END_GAME
 }

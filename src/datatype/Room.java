@@ -11,9 +11,13 @@ public class Room {
     private int maxUser;
     private int currentUser;
     private int totalRound;
-    private int currentRound;
-    private boolean gameStarted;
+    private volatile int currentRound;
+    private volatile boolean gameStarted;
     private int readyUserCount;
+    private volatile int testTakerID;
+    private volatile String currentAnswer;
+    private volatile boolean isRoundInProgress;
+    private long roundStartTime;
 
     public Room(int ID, String name, int maxUser, int totalRound){
         this.roomID = ID;
@@ -24,6 +28,9 @@ public class Room {
         this.currentRound = 0;
         this.gameStarted = false;
         readyUserCount = 1;
+        testTakerID = -1;
+        currentAnswer = null;
+        isRoundInProgress = false;
     }
 
     public int getRoomID() {
@@ -88,5 +95,37 @@ public class Room {
 
     public void setReadyUserCount(int readyUserCount) {
         this.readyUserCount = readyUserCount;
+    }
+
+    public int getTestTakerID() {
+        return testTakerID;
+    }
+
+    public void setTestTakerID(int testTakerID) {
+        this.testTakerID = testTakerID;
+    }
+
+    public String getCurrentAnswer() {
+        return currentAnswer;
+    }
+
+    public void setCurrentAnswer(String currentAnswer) {
+        this.currentAnswer = currentAnswer;
+    }
+
+    public boolean isRoundInProgress() {
+        return isRoundInProgress;
+    }
+
+    public void setRoundInProgress(boolean roundInProgress) {
+        isRoundInProgress = roundInProgress;
+    }
+
+    public long getRoundStartTime() {
+        return roundStartTime;
+    }
+
+    public void setRoundStartTime(long roundStartTime) {
+        this.roundStartTime = roundStartTime;
     }
 }
