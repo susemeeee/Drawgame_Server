@@ -390,7 +390,7 @@ public class Connection{
                         if((user.getRoomNumber() == ID) && status){
                             response = new Packet(PacketType.START_GAME);
                             sendOne(response, user.getSocketChannel());
-
+                            System.out.println();
                             messages.add("Send type: " + PacketType.START_GAME);
                         }
                     }
@@ -660,7 +660,6 @@ public class Connection{
     }
 
     private int generateRoomUserID(int roomID, User client){
-        int id = 0;
         Room room = findRoom(roomID);
         boolean[] isGenerated = new boolean[room.getMaxUser()];
 
@@ -713,8 +712,8 @@ public class Connection{
         }
 
         for(int i = 0; i < ranks.length; i++){
-            for(int j = 0; j < scores.size(); j++){
-                if(scores.get(i) < scores.get(j)){
+            for (Integer score : scores) {
+                if (scores.get(i) < score) {
                     ranks[i]++;
                 }
             }
